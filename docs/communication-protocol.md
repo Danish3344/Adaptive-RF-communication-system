@@ -1,37 +1,48 @@
 # Communication Protocol
 
-## Current Prototype Model
+## Radio Configuration
 
-The system uses the nRF24L01 packet-based radio interface between two ESP32 nodes.
+The current firmware uses nRF24L01 Enhanced ShockBurst-style packet communication with automatic acknowledgement enabled.
 
-```text
-Transmitter                         Receiver
------------                         --------
-ESP32 A                             ESP32 B
-   |                                   ^
-   v                                   |
-nRF24L01 A  =====  RF packets  =====  nRF24L01 B
-   |                                   |
-   +---- acknowledgement / status ----+
-```
-
-## Packet Design
-
-The final application packet format will be defined together with the verified firmware. A structured packet should provide enough information for the receiver to distinguish valid application data from communication/status information.
-
-Potential fields include:
-
-| Field | Purpose |
+| Parameter | Current firmware value |
 |---|---|
-| Sequence number | Detect missing or repeated packets |
-| Payload | Application data |
-| Status/flags | Communicate node state |
-| Optional diagnostic data | Support RF-link experiments |
+| RF channel | 76 |
+| CRC | 16-bit |
+| Auto acknowledgement | Enabled |
+| Payload mode | Dynamic payloads enabled |
+| Data-rate states | 250 kbps, 1 Mbps, 2 Mbps |
 
-Only fields actually implemented in the firmware will be listed as part of the final protocol specification.
+These are firmware configuration values, not measured RF performance values.
 
-## Reliability Observation
+## Packet Structure
 
-The receiver/transmitter pair can use communication events such as successful acknowledgements, failed transmissions, retries, and timeouts as indicators of link behaviour.
+The firmware uses the following fixed application/control structure:
 
-These indicators form the basis for the adaptive-control layer.
+| Field | Type | Purpose |
+|---|---|---|
+| `sequence` | `uint32_t` | Identifies packet order |
+| `type` | `uint8_t` | `0` = data, `1` = rate proposal |
+| `requestedRate` | `uint8_t` | Requested RF data-rate state |
+| `retryProfile` | `uint8_t` | Transmitter retry-profile state |
+| `uptimeMs` | `uint32_t` | Sender uptime at packet creation |
+
+## Data Packet
+
+Normal packets use `type = 0`. The sequence number increases for each generated packet. Successful `radio.write()` completion is treated by the transmitter as successful delivery with the nRF24L01 acknowledgement mechanism.
+
+## Rate Proposal Packet
+
+A packet with `type = 1` proposes a data-rate transition. The receiver consumes the proposal while the current link configuration is still active, then changes its local radio data rate. The transmitter follows after a short transition delay.
+
+The purpose of this handshake-like ordering is to avoid both radios changing data rate independently.
+
+## Reliability Indicators
+
+The current implementation uses:
+
+- successful/failed packet transmission,
+- consecutive transmission failures,
+- consecutive successful transmissions, and
+- receiver packet timeout.
+
+These indicators drive the adaptive control logic described in `adaptive-algorithm.md`.
