@@ -1,20 +1,16 @@
 # Adaptive RF Communication System
 
-A two-node wireless communication system built with **ESP32** microcontrollers and **nRF24L01** 2.4 GHz transceiver modules. The project explores adaptive communication techniques for maintaining reliable data exchange when RF link conditions change.
+A two-node wireless communication prototype built with **ESP32** microcontrollers and **nRF24L01** 2.4 GHz transceiver modules. The project explores adaptive communication techniques for maintaining reliable packet exchange when RF-link conditions change.
 
-## Project Overview
+## Project Objective
 
-Wireless links do not always operate under stable conditions. Distance, interference, obstacles, power conditions, and channel activity can reduce communication reliability.
+The system is designed as a feedback loop:
 
-This project is designed around two ESP32-based RF nodes:
+**Transmit → Receive → Measure → Detect degradation → Adapt → Continue**
 
-- **Node A — Transmitter:** generates and sends application data.
-- **Node B — Receiver:** receives packets, evaluates communication status, and provides local feedback through a buzzer.
-- **nRF24L01:** provides the RF data link between the two nodes.
+The transmitter sends numbered packets and uses acknowledgement success/failure as a practical link-health indicator. When repeated failures occur, the reference firmware increases the retry profile and can negotiate a lower RF data rate. During sustained successful communication, it can negotiate a higher data rate.
 
-The long-term objective is to make the communication layer respond to deteriorating link conditions instead of relying on a fixed configuration.
-
-> **Implementation note:** This repository documents the actual build incrementally. Adaptive parameters and measured performance will only be documented after they are verified on the hardware.
+> **Important:** The firmware in this repository is a **reference implementation developed for this repository**. It is not claimed to be a byte-for-byte recovery of the original prototype firmware. GPIO assignments and performance results remain subject to physical verification.
 
 ## Hardware
 
@@ -23,37 +19,55 @@ The long-term objective is to make the communication layer respond to deteriorat
 | ESP32 development board | 2 | Wireless node controllers |
 | nRF24L01 transceiver | 2 | 2.4 GHz RF communication |
 | Buzzer | 1 | Local communication/status indication |
-| Jumper wires / breadboard | As required | Prototyping and connections |
+| Breadboard / jumper wires | As required | Prototyping |
 
 ## System Architecture
 
 ```text
-                 RF Link
-       ┌─────────────────────────┐
-       │                         │
-┌──────▼──────┐             ┌────▼───────┐
-│   ESP32 A   │             │  ESP32 B   │
-│ Transmitter │             │  Receiver  │
-└──────┬──────┘             └────┬───────┘
-       │                         │
-┌──────▼──────┐             ┌────▼───────┐
-│ nRF24L01 A  │◄───────────►│ nRF24L01 B │
-└─────────────┘             └────┬───────┘
-                                  │
-                             ┌────▼────┐
-                             │ Buzzer  │
-                             └─────────┘
+                 2.4 GHz RF Link
+       ┌──────────────────────────────┐
+       │                              │
+┌──────▼──────┐                  ┌────▼───────┐
+│   ESP32 A   │                  │  ESP32 B   │
+│ Transmitter │                  │  Receiver  │
+└──────┬──────┘                  └────┬───────┘
+       │ SPI                          │ SPI
+┌──────▼──────┐                  ┌────▼───────┐
+│ nRF24L01 A  │◄────────────────►│ nRF24L01 B │
+└─────────────┘                  └────┬───────┘
+                                      │ GPIO
+                                 ┌────▼────┐
+                                 │ Buzzer  │
+                                 └─────────┘
 ```
 
-## Core Engineering Concepts
+## Adaptive Behaviour
 
-- SPI communication between ESP32 and nRF24L01
-- Packet-based wireless communication
-- Transmit/receive acknowledgement
-- Link-quality observation
-- Fault detection and recovery
-- Adaptive RF communication strategy
-- Embedded C/C++ development using Arduino IDE
+The reference implementation adapts two communication parameters:
+
+1. **Retry profile** — progressively increases the nRF24L01 retry delay/count after repeated packet failures.
+2. **RF data rate** — proposes a lower data rate after repeated failures and a higher rate after sustained successful communication.
+
+The data-rate transition is coordinated through a proposal packet so the two radios do not independently switch configuration.
+
+These are implementation details of the repository's reference firmware and should not be presented as measured characteristics of the physical prototype until tested.
+
+## Firmware
+
+The project is written in Arduino-compatible C++ for ESP32 using the **RF24** library.
+
+### Reference configuration
+
+- RF channel: 76
+- CRC: 16-bit
+- Auto-acknowledgement: enabled
+- Dynamic payloads: enabled
+- Initial data rate: 1 Mbps
+- Initial retry profile: delay 2 / count 3
+- Packet interval: 100 ms
+- Receiver link timeout: 500 ms
+
+The exact GPIO mapping is intentionally marked provisional until it is checked against the physical wiring.
 
 ## Repository Structure
 
@@ -74,52 +88,64 @@ Adaptive-RF-communication-system/
     └── adaptive-algorithm.md
 ```
 
+## Setup
+
+1. Install ESP32 board support in Arduino IDE.
+2. Install the **RF24** library.
+3. Verify the nRF24L01 power supply and common ground.
+4. Verify CE, CSN and SPI wiring against the physical prototype.
+5. Upload `src/transmitter/transmitter.ino` to Node A.
+6. Upload `src/receiver/receiver.ino` to Node B.
+7. Open both Serial Monitor windows at **115200 baud**.
+8. Observe packet sequence numbers, RF rate, retry profile and link state.
+
+## Testing Plan
+
+Physical validation should be performed before claiming final system performance.
+
+Suggested experiments:
+
+- Baseline test at short range.
+- Increase distance in controlled steps.
+- Introduce obstacles between nodes.
+- Repeat tests under different RF environments.
+- Record packet delivery success/failure and adaptation events.
+- Measure recovery behaviour after the link degrades.
+- Compare fixed-rate operation against adaptive operation.
+
+Recommended metrics include packet delivery ratio, consecutive failures, recovery time, selected data rate, retry profile and throughput/latency where measurable.
+
 ## Development Status
 
-**Stage 1 — Repository and system documentation:** In progress
+| Area | Status |
+|---|---|
+| Repository structure | ✅ Complete |
+| Documentation baseline | ✅ Complete |
+| ESP32 transmitter firmware | ✅ Reference implementation |
+| ESP32 receiver firmware | ✅ Reference implementation |
+| Adaptive retry/rate logic | ✅ Implemented in reference firmware |
+| Exact physical GPIO verification | ⏳ Requires prototype check |
+| Hardware integration test | ⏳ Requires physical test |
+| Measured RF performance | ⏳ Requires experiment |
+| Final results/plots | ⏳ Requires measured data |
 
-**Stage 2 — Verified transmitter and receiver firmware:** Pending hardware verification
+The remaining items cannot be honestly marked complete without access to the physical prototype and measured test results.
 
-**Stage 3 — Adaptive communication logic:** Pending verification of the implemented adaptation mechanism
+## Future Improvements
 
-**Stage 4 — Experimental measurements and results:** Pending testing
-
-## Getting Started
-
-The firmware will be developed for the ESP32 using the Arduino IDE and an nRF24L01-compatible RF library.
-
-Before uploading firmware, verify:
-
-1. ESP32 board support is installed in Arduino IDE.
-2. The nRF24L01 modules are powered correctly.
-3. SPI and control-pin wiring matches the documented hardware configuration.
-4. Both nodes use compatible RF settings.
-5. The transmitter and receiver are programmed with their respective firmware.
-
-## Testing Approach
-
-The system will be evaluated by changing the RF link conditions and observing communication behaviour. Relevant measurements may include packet delivery, acknowledgement success, response/recovery behaviour, and the selected adaptive state.
-
-No performance figures are claimed in this README until they are measured on the physical prototype.
-
-## Future Development
-
-- Complete verified transmitter and receiver firmware
-- Implement and document the adaptive decision mechanism
-- Add structured packet and status reporting
-- Record repeatable RF-link experiments
-- Add measured performance plots/results
-- Improve fault recovery and diagnostics
-- Document hardware revisions and test conditions
+- Add structured CSV/serial logging for experiments.
+- Add packet delivery and recovery statistics.
+- Compare adaptive and fixed configurations quantitatively.
+- Add repeatable test procedures and plots.
+- Document verified hardware revisions.
+- Add watchdog/fault-recovery behaviour where appropriate.
+- Evaluate additional adaptation strategies such as channel selection after controlled testing.
 
 ## Author
 
-**Danish**
-
+**Danish**  
 Embedded Systems / RF Communication Project
-
----
 
 ## License
 
-This project is released under the MIT License. See [LICENSE](LICENSE) for details.
+This project is released under the MIT License. See `LICENSE` for details.
