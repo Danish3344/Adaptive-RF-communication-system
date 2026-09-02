@@ -2,49 +2,64 @@
 
 ## Objective
 
-The adaptive layer is intended to reduce communication failures by detecting degradation in the RF link and changing the communication strategy when required.
+The adaptive layer responds to changing packet-delivery conditions instead of keeping a single RF configuration under all conditions.
 
-## Decision Loop
+## Current Decision Logic
 
 ```text
-          +----------------------+
-          | Transmit data packet |
-          +----------+-----------+
-                     |
-                     v
-          +----------------------+
-          | Observe communication|
-          | result / link status  |
-          +----------+-----------+
-                     |
-             Link healthy?
-                /       \
-              yes        no
-               |          |
-               v          v
-       Continue normal   Apply the
-       communication     verified
-                         adaptation
-               |          |
-               +----+-----+
-                    |
-                    v
-             Re-evaluate link
+                    Start
+                      |
+                      v
+               Send data packet
+                      |
+                +-----+-----+
+                |           |
+              success     failure
+                |           |
+                v           v
+        reset failure   increment failure
+          counter           counter
+                |           |
+                |      threshold reached?
+                |           |
+                |          yes
+                |           v
+                |    increase retry profile
+                |           |
+                |    propose lower data rate
+                |           |
+                +-----<-----+
+                      |
+                      v
+                 continue loop
 ```
 
-## Adaptation Parameters
+## Degradation Response
 
-The exact parameters changed by the implemented prototype are intentionally not specified here yet. They must be taken from the verified firmware rather than inferred from the project concept.
+The transmitter counts consecutive failed packet transmissions. After the configured failure threshold is reached:
 
-Once the hardware is tested, this document will contain:
+1. The transmitter moves to a stronger retry profile when available.
+2. If the current data rate is above the minimum state, it sends a rate-change proposal at the currently working rate.
+3. The receiver applies the proposed lower rate.
+4. The transmitter follows the receiver after the transition delay.
 
-- the measured link-quality indicator(s),
-- thresholds used by the controller,
-- parameters that are changed,
-- the adaptation sequence,
-- recovery conditions, and
-- experimental observations.
+## Recovery Response
 
-## Why This Matters
+When communication remains successful for a sustained number of packets, the transmitter can propose moving to a higher data rate. This allows the system to recover toward higher throughput after the link becomes stable.
 
-A fixed RF configuration can perform well in one environment and poorly in another. An adaptive controller provides a path toward communication that responds to changing conditions instead of assuming that the channel remains constant.
+## Current Firmware Parameters
+
+| Parameter | Value |
+|---|---:|
+| Failure threshold | 3 consecutive failures |
+| Recovery threshold | 20 consecutive successes |
+| Data-rate states | 250 kbps / 1 Mbps / 2 Mbps |
+| Retry profiles | 4 levels |
+
+These thresholds are initial firmware control parameters. They are **not experimental claims** and should be tuned using measured test data.
+
+## Important Limitation
+
+The nRF24L01 provides packet-delivery/acknowledgement information, but the current prototype does not claim direct RSSI measurement from the nRF24L01. Therefore, link degradation is inferred from communication outcomes rather than a measured RSSI value.
+
+Future versions can add an external RF-monitoring method if direct signal-strength or interference measurements are required.
