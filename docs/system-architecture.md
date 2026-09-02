@@ -1,64 +1,76 @@
 # System Architecture
 
-## 1. Purpose
+## Purpose
 
-The Adaptive RF Communication System is a two-node embedded wireless prototype intended to study reliable packet communication under changing RF-link conditions.
+The system uses two ESP32 nodes connected through nRF24L01 transceivers. The communication layer monitors packet delivery and adapts RF behaviour when the link becomes unreliable.
 
-## 2. Node Architecture
+## Nodes
 
 ### Node A — Transmitter
 
-- ESP32 microcontroller
-- nRF24L01 RF transceiver
-- Application/data generation
-- Packet transmission
-- Communication-status handling
+- Generates sequential application packets.
+- Sends packets using nRF24L01 auto-acknowledgement.
+- Tracks consecutive transmission failures and successful transmissions.
+- Increases the retry profile after repeated failures.
+- Proposes a lower RF data rate when the link degrades.
+- Can propose a higher data rate after sustained successful communication.
 
 ### Node B — Receiver
 
-- ESP32 microcontroller
-- nRF24L01 RF transceiver
-- Packet reception
-- Communication-status evaluation
-- Buzzer-based local indication
+- Listens for packets from the transmitter.
+- Records received sequence numbers and packet information.
+- Detects a communication timeout.
+- Provides buzzer feedback when the link is lost.
+- Applies a new data rate when a rate-change proposal is received.
 
-## 3. Communication Flow
+## Communication Flow
 
 ```text
-Application data
-      |
-      v
-   ESP32 A
-      |
-      | SPI
-      v
- nRF24L01 A
-      |
-      | 2.4 GHz RF link
-      v
- nRF24L01 B
-      |
-      | SPI
-      v
-   ESP32 B
-      |
-      +----> Status / fault indication
-      |
-      +----> Buzzer
+Transmitter
+    |
+    |  Data packet + nRF24L01 ACK
+    v
+Receiver
+    |
+    |  Link status / rate proposal handling
+    v
+Adaptive decision
+    |
+    +---- repeated failures ----> stronger retry profile
+    |
+    +---- repeated failures ----> lower data rate proposal
+    |
+    +---- sustained success ----> higher data rate proposal
 ```
 
-## 4. Adaptive Layer
+## Adaptive State Machine
 
-The adaptive layer is intended to observe communication behaviour and respond when the RF link becomes unreliable.
+```text
+                 sustained success
+              +----------------------+
+              |                      |
+              v                      |
+        [Higher Rate] <--------- [Stable Link]
+              ^                      |
+              |                      |
+              +----------------------+
+                     repeated failures
+                           |
+                           v
+                    [Lower Rate]
+                           |
+                           v
+                  [Recovery / Retry]
+```
 
-Examples of observable indicators include acknowledgement success/failure, packet delivery behaviour, retries, and communication timeouts. The exact adaptive parameters used by the physical prototype will be recorded here after firmware and hardware verification.
+The firmware currently uses a configurable three-level data-rate set (250 kbps, 1 Mbps, and 2 Mbps) and four retry profiles. These are implementation parameters, not measured performance results.
 
-## 5. Design Principle
+## Design Principle
 
-The system separates three concerns:
+The two radios must not independently change their RF data rate. A rate transition is therefore sent as a proposal over the currently working configuration, and the receiver applies the proposed rate before the transmitter follows it.
 
-1. **RF transport** — nRF24L01 packet communication.
-2. **Control and decision making** — ESP32 firmware.
-3. **User feedback** — buzzer/status indication.
+## Hardware Interface
 
-This separation makes the prototype easier to test, modify, and extend.
+The firmware uses the ESP32 hardware SPI peripheral for the nRF24L01 interface. CE and CSN are controlled by GPIO pins. The receiver also drives a buzzer from a GPIO output.
+
+**Important:** the pin definitions in the firmware are a baseline and must be checked against the physical prototype before deployment. The project's original circuit photographs should be treated as the source of truth for final wiring documentation.
