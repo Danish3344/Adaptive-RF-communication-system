@@ -2,7 +2,7 @@
 #include <SPI.h>
 #include <RF24.h>
 
-// ESP32 + nRF24L01 default wiring used by this firmware.
+// ESP32 + nRF24L01 default wiring used by this reference firmware.
 // Verify these pins against the physical prototype before uploading.
 static constexpr uint8_t NRF_CE = 4;
 static constexpr uint8_t NRF_CSN = 5;
@@ -35,6 +35,15 @@ uint32_t receivedPackets = 0;
 uint32_t lastSequence = 0;
 bool linkAlive = false;
 
+const char *rateName(uint8_t index) {
+  switch (index) {
+    case 0: return "250kbps";
+    case 1: return "1Mbps";
+    case 2: return "2Mbps";
+    default: return "unknown";
+  }
+}
+
 void applyRadioRate(uint8_t index) {
   if (index > 2) return;
   if (!radio.setDataRate(DATA_RATES[index])) {
@@ -43,7 +52,7 @@ void applyRadioRate(uint8_t index) {
   }
   currentRateIndex = index;
   Serial.print("RF data rate -> ");
-  Serial.println(index == 0 ? "250 kbps" : (index == 1 ? "1 Mbps" : "2 Mbps"));
+  Serial.println(rateName(index));
 }
 
 void indicateLink(bool active) {
@@ -91,8 +100,6 @@ void setup() {
 void loop() {
   if (radio.available()) {
     Packet packet{};
-    const uint8_t pipe = radio.available();
-    (void)pipe;
     radio.read(&packet, sizeof(packet));
     lastPacketMs = millis();
     receivedPackets++;
@@ -101,13 +108,13 @@ void loop() {
     Serial.print("RX seq=");
     Serial.print(packet.sequence);
     Serial.print(" rate=");
-    Serial.print(packet.requestedRate == 0 ? "250kbps" : (packet.requestedRate == 1 ? "1Mbps" : "2Mbps"));
+    Serial.print(rateName(packet.requestedRate));
     Serial.print(" retryProfile=");
     Serial.println(packet.retryProfile);
 
     if (packet.type == 1 && packet.requestedRate <= 2) {
-      // Proposal was received over the currently valid link. Apply it only
-      // after the packet has been consumed so both nodes transition cleanly.
+      // The proposal was received over the currently valid link. Consume the
+      // packet first, then switch so the transmitter can follow shortly after.
       delay(15);
       applyRadioRate(packet.requestedRate);
     }
