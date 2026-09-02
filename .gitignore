@@ -1,0 +1,29 @@
+# Arduino / ESP32 build artifacts
+*.bin
+*.elf
+*.map
+*.hex
+*.eep
+*.lst
+*.sym
+
+# Arduino IDE generated files
+build/
+.vscode/
+.idea/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+
+# Temporary/editor files
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Local configuration / credentials
+.env
+*.local
