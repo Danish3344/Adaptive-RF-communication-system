@@ -1,6 +1,6 @@
 # Adaptive RF Communication System
 
-A two-node wireless communication prototype built with **ESP32** microcontrollers and **nRF24L01** 2.4 GHz transceiver modules. The project explores adaptive communication techniques for maintaining reliable packet exchange when RF-link conditions change.
+A two-node wireless communication prototype built with **ESP32** microcontrollers and **nRF24L01 PA/LNA** 2.4 GHz transceiver modules. The project explores adaptive communication techniques for maintaining reliable packet exchange when RF-link conditions change.
 
 ## Project Objective
 
@@ -10,15 +10,15 @@ The system is designed as a feedback loop:
 
 The transmitter sends numbered packets and uses acknowledgement success/failure as a practical link-health indicator. When repeated failures occur, the reference firmware increases the retry profile and can negotiate a lower RF data rate. During sustained successful communication, it can negotiate a higher data rate.
 
-> **Important:** The firmware in this repository is a **reference implementation developed for this repository**. It is not claimed to be a byte-for-byte recovery of the original prototype firmware. GPIO assignments and performance results remain subject to physical verification.
+> **Important:** The firmware in this repository is a **reference implementation developed for this repository**. It is not claimed to be a byte-for-byte recovery of the original prototype firmware. The physical prototype previously produced unexpected test behaviour, so final hardware performance is not claimed until the diagnostic stage passes repeatably.
 
 ## Hardware
 
 | Component | Quantity | Purpose |
 |---|---:|---|
 | ESP32 development board | 2 | Wireless node controllers |
-| nRF24L01 transceiver | 2 | 2.4 GHz RF communication |
-| Buzzer | 1 | Local communication/status indication |
+| nRF24L01 PA/LNA transceiver | 2 | 2.4 GHz RF communication |
+| Buzzer | 1 | Receiver status indication |
 | Breadboard / jumper wires | As required | Prototyping |
 
 ## System Architecture
@@ -35,11 +35,30 @@ The transmitter sends numbered packets and uses acknowledgement success/failure 
 ┌──────▼──────┐                  ┌────▼───────┐
 │ nRF24L01 A  │◄────────────────►│ nRF24L01 B │
 └─────────────┘                  └────┬───────┘
-                                      │ GPIO
+                                      │ GPIO 25
                                  ┌────▼────┐
                                  │ Buzzer  │
                                  └─────────┘
 ```
+
+## Reference Wiring
+
+Both ESP32 nodes use the same nRF24L01 wiring:
+
+| nRF24L01 | ESP32 |
+|---|---|
+| VCC | 3.3 V |
+| GND | GND |
+| CE | GPIO 4 |
+| CSN | GPIO 5 |
+| SCK | GPIO 18 |
+| MOSI | GPIO 23 |
+| MISO | GPIO 19 |
+| IRQ | Not connected |
+
+Receiver buzzer: **GPIO 25 → buzzer signal/positive, buzzer negative → GND**.
+
+See [`docs/hardware.md`](docs/hardware.md) for the complete wiring checklist.
 
 ## Adaptive Behaviour
 
@@ -52,6 +71,24 @@ The data-rate transition is coordinated through a proposal packet so the two rad
 
 These are implementation details of the repository's reference firmware and should not be presented as measured characteristics of the physical prototype until tested.
 
+## Diagnostic-First Development
+
+Because the previous physical test produced unexpected Serial Monitor behaviour and continuous buzzer activity, the project now uses a staged validation process:
+
+**Stage 1 — Hardware initialization**  
+Confirm both nRF24L01 modules initialize correctly.
+
+**Stage 2 — Basic RF link**  
+Confirm the transmitter receives ACKs and the receiver prints increasing packet sequence numbers.
+
+**Stage 3 — Status indication**  
+Confirm the receiver buzzer is silent during a healthy link and only gives a short indication after a timeout.
+
+**Stage 4 — Adaptive firmware**  
+Only after the basic RF link is stable, test adaptive retry and data-rate behaviour.
+
+Diagnostic firmware is in `src/diagnostic/` and the procedure is documented in [`docs/diagnostic-test.md`](docs/diagnostic-test.md).
+
 ## Firmware
 
 The project is written in Arduino-compatible C++ for ESP32 using the **RF24** library.
@@ -61,13 +98,13 @@ The project is written in Arduino-compatible C++ for ESP32 using the **RF24** li
 - RF channel: 76
 - CRC: 16-bit
 - Auto-acknowledgement: enabled
-- Dynamic payloads: enabled
+- Dynamic payloads: enabled in adaptive firmware
 - Initial data rate: 1 Mbps
 - Initial retry profile: delay 2 / count 3
-- Packet interval: 100 ms
-- Receiver link timeout: 500 ms
-
-The exact GPIO mapping is intentionally marked provisional until it is checked against the physical wiring.
+- Adaptive packet interval: 100 ms
+- Adaptive receiver link timeout: 500 ms
+- Diagnostic packet interval: 1000 ms
+- Diagnostic receiver timeout: 3000 ms
 
 ## Repository Structure
 
@@ -79,25 +116,31 @@ Adaptive-RF-communication-system/
 ├── src/
 │   ├── transmitter/
 │   │   └── transmitter.ino
-│   └── receiver/
-│       └── receiver.ino
+│   ├── receiver/
+│   │   └── receiver.ino
+│   └── diagnostic/
+│       ├── transmitter_diagnostic.ino
+│       └── receiver_diagnostic.ino
 └── docs/
     ├── system-architecture.md
     ├── hardware.md
     ├── communication-protocol.md
-    └── adaptive-algorithm.md
+    ├── adaptive-algorithm.md
+    └── diagnostic-test.md
 ```
 
 ## Setup
 
 1. Install ESP32 board support in Arduino IDE.
 2. Install the **RF24** library.
-3. Verify the nRF24L01 power supply and common ground.
-4. Verify CE, CSN and SPI wiring against the physical prototype.
-5. Upload `src/transmitter/transmitter.ino` to Node A.
-6. Upload `src/receiver/receiver.ino` to Node B.
+3. Rebuild the hardware using the pin table in `docs/hardware.md`.
+4. Verify both nRF24 modules use 3.3 V and share ground with their ESP32.
+5. Upload the diagnostic transmitter to Node A.
+6. Upload the diagnostic receiver to Node B.
 7. Open both Serial Monitor windows at **115200 baud**.
-8. Observe packet sequence numbers, RF rate, retry profile and link state.
+8. Confirm `PASS: nRF24L01 initialized.` on both boards.
+9. Confirm transmitter `ACK_OK` and receiver `RX seq=` output.
+10. Only then upload the adaptive transmitter/receiver firmware.
 
 ## Testing Plan
 
@@ -121,15 +164,15 @@ Recommended metrics include packet delivery ratio, consecutive failures, recover
 |---|---|
 | Repository structure | ✅ Complete |
 | Documentation baseline | ✅ Complete |
-| ESP32 transmitter firmware | ✅ Reference implementation |
-| ESP32 receiver firmware | ✅ Reference implementation |
-| Adaptive retry/rate logic | ✅ Implemented in reference firmware |
-| Exact physical GPIO verification | ⏳ Requires prototype check |
-| Hardware integration test | ⏳ Requires physical test |
-| Measured RF performance | ⏳ Requires experiment |
+| Reference transmitter firmware | ✅ Complete |
+| Reference receiver firmware | ✅ Complete |
+| Diagnostic firmware | ✅ Complete |
+| Fixed reference GPIO wiring | ✅ Defined in firmware/docs |
+| Previous physical prototype test | ⚠️ Unexpected output observed |
+| Basic RF diagnostic validation | ⏳ Pending next hardware assembly |
+| Adaptive hardware validation | ⏳ Blocked until diagnostic passes |
+| Measured RF performance | ⏳ Requires repeatable experiment |
 | Final results/plots | ⏳ Requires measured data |
-
-The remaining items cannot be honestly marked complete without access to the physical prototype and measured test results.
 
 ## Future Improvements
 
