@@ -60,12 +60,14 @@ void setup() {
 void loop() {
   static uint32_t lastPacketMs = millis();
   static uint32_t received = 0;
+  static bool timeoutReported = false;
 
   if (radio.available()) {
     TestPacket packet{};
     radio.read(&packet, sizeof(packet));
     lastPacketMs = millis();
     received++;
+    timeoutReported = false;
 
     noTone(BUZZER_PIN);
 
@@ -78,16 +80,11 @@ void loop() {
   }
 
   if (millis() - lastPacketMs > LINK_TIMEOUT_MS) {
-    // Short diagnostic beep only once per timeout period.
-    static bool timeoutReported = false;
     if (!timeoutReported) {
       Serial.println("WARN: no packet received for 3 seconds.");
       tone(BUZZER_PIN, 1800, 150);
       timeoutReported = true;
     }
-  } else {
-    static bool timeoutReported = false;
-    timeoutReported = false;
   }
 
   delay(2);
